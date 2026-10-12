@@ -1,0 +1,217 @@
+/* =====================================================================
+   PHOS.EVO — ferramenta de câmera
+   1. Foto interativa (palco)   2. Visor que segue o mouse
+   3. Dock de funções           4. Toast e fragmento voando
+   ===================================================================== */
+
+/* ---------- 1. PALCO DA FOTO ---------- */
+.photo-stage {
+    --lx: 50%;            /* posição da lente (o JS atualiza) */
+    --ly: 50%;
+    --lr: 9999px;         /* raio da lente; enorme = tudo "em foco" */
+    position: relative;
+    aspect-ratio: 3 / 2;
+    border-radius: clamp(16px, 2.8vw, 30px);
+    overflow: hidden;
+    isolation: isolate;
+    background: #111;
+    cursor: crosshair;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: pan-y;
+}
+
+.photo-stage img,
+.photo-paint {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    pointer-events: none;
+}
+.photo-stage img { object-fit: cover; }
+
+/* cópia desfocada (aparece só com a função DESFOQUE ligada) */
+.photo-blur { filter: blur(7px) brightness(.85); opacity: 0; transition: opacity .4s ease; }
+.photo-stage[data-blur="on"] .photo-blur { opacity: 1; }
+
+/* com DESFOQUE ligado, só o círculo da lente fica nítido */
+.photo-stage[data-blur="on"] .photo-main {
+    -webkit-mask-image: radial-gradient(circle var(--lr) at var(--lx) var(--ly), #000 88%, transparent 100%);
+            mask-image: radial-gradient(circle var(--lr) at var(--lx) var(--ly), #000 88%, transparent 100%);
+}
+
+/* camada de cor: "color" aplica matiz/saturação sobre a luz da foto P&B */
+.photo-paint { mix-blend-mode: color; opacity: .68; transition: opacity .4s ease, filter .4s ease; }
+.photo-stage[data-sat="on"] .photo-paint { opacity: 1; filter: saturate(1.9); }
+
+.stage-flash {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 3;
+}
+.stage-flash.is-firing { animation: stage-flash .45s ease-out; }
+@keyframes stage-flash { 0% { opacity: .8; } 100% { opacity: 0; } }
+
+.stage-hint {
+    position: absolute;
+    left: 0; right: 0; bottom: 4%;
+    z-index: 2;
+    margin: 0;
+    text-align: center;
+    font: 300 clamp(.7rem, 1.5vw, .9rem) var(--font-body);
+    letter-spacing: .1em;
+    color: #fff;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, .9);
+    pointer-events: none;
+    transition: opacity .6s ease;
+}
+.stage-hint::before { content: attr(data-mouse); }
+@media (hover: none) { .stage-hint::before { content: attr(data-touch); } }
+.photo-stage.has-shot .stage-hint { opacity: 0; }
+
+
+/* ---------- 2. VISOR (segue o mouse) ---------- */
+.viewfinder {
+    --lens: 120px;
+    position: fixed;
+    left: 0; top: 0;
+    width: 0; height: 0;
+    z-index: 90;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .25s ease;
+}
+.viewfinder.is-visible { opacity: 1; }
+
+.vf-ring, .vf-cross, .vf-c { position: absolute; display: block; }
+
+.vf-ring {
+    left: 0; top: 0;
+    width: var(--lens); height: var(--lens);
+    transform: translate(-50%, -50%);
+    border: 1.5px solid rgba(255, 255, 255, .9);
+    border-radius: 50%;
+    box-shadow: 0 0 14px rgba(255, 255, 255, .35), inset 0 0 18px rgba(255, 255, 255, .12);
+    transition: width .25s var(--ease-out), height .25s var(--ease-out);
+}
+.vf-cross { left: 0; top: 0; width: 18px; height: 18px; transform: translate(-50%, -50%); }
+.vf-cross::before, .vf-cross::after { content: ''; position: absolute; background: #fff; }
+.vf-cross::before { left: 50%; top: 0; width: 1.5px; height: 100%; transform: translateX(-50%); }
+.vf-cross::after  { top: 50%; left: 0; height: 1.5px; width: 100%; transform: translateY(-50%); }
+
+/* colchetes do visor nos 4 cantos da lente */
+.vf-c { width: 12px; height: 12px; border: 0 solid #fff; transition: transform .25s var(--ease-out); }
+.vf-c.tl { left: calc(var(--lens) / -2 - 8px); top: calc(var(--lens) / -2 - 8px); border-top-width: 2px; border-left-width: 2px; }
+.vf-c.tr { left: calc(var(--lens) /  2 - 4px); top: calc(var(--lens) / -2 - 8px); border-top-width: 2px; border-right-width: 2px; }
+.vf-c.bl { left: calc(var(--lens) / -2 - 8px); top: calc(var(--lens) /  2 - 4px); border-bottom-width: 2px; border-left-width: 2px; }
+.vf-c.br { left: calc(var(--lens) /  2 - 4px); top: calc(var(--lens) /  2 - 4px); border-bottom-width: 2px; border-right-width: 2px; }
+
+.vf-info {
+    position: absolute;
+    left: 0;
+    top: calc(var(--lens) / 2 + 16px);
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font: 400 .66rem var(--font-body);
+    letter-spacing: .12em;
+    color: #fff;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, .9);
+}
+
+/* disparo: o visor "contrai" por um instante */
+.viewfinder.is-shot .vf-ring { width: calc(var(--lens) * .86); height: calc(var(--lens) * .86); }
+
+/* esconde o cursor normal sobre a foto (o visor assume) */
+@media (hover: hover) { .photo-stage { cursor: none; } }
+
+
+/* ---------- 3. DOCK DE FUNÇÕES ---------- */
+.cam-dock {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    z-index: 70;
+    display: flex;
+    gap: 6px;
+    max-width: calc(100vw - 24px);
+    padding: 8px;
+    overflow-x: auto;
+    border: 1px solid rgba(255, 255, 255, .2);
+    border-radius: 18px;
+    background: rgba(10, 10, 12, .72);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, .5);
+    transform: translate(-50%, 140%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform .55s var(--ease-out), opacity .35s ease;
+    scrollbar-width: none;
+}
+.cam-dock::-webkit-scrollbar { display: none; }
+.cam-on .cam-dock { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: none;
+    padding: 9px 13px;
+    border: 1px solid rgba(255, 255, 255, .2);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .06);
+    color: #fff;
+    font: 300 .76rem var(--font-body);
+    letter-spacing: .06em;
+    cursor: pointer;
+    transition: background .25s ease, border-color .25s ease, box-shadow .3s ease, transform .25s ease;
+}
+.chip svg { width: 13px; height: 13px; }
+.chip:hover { background: rgba(255, 255, 255, .14); transform: translateY(-2px); }
+.chip.is-on {
+    border-color: #fffa73;
+    background: rgba(255, 250, 115, .16);
+    box-shadow: 0 0 16px rgba(255, 250, 115, .4);
+}
+.chip.is-locked { opacity: .42; }
+.chip:focus-visible { outline: 2px solid #fffa73; outline-offset: 2px; }
+
+
+/* ---------- 4. TOAST + FRAGMENTO VOANDO ---------- */
+.toast {
+    position: fixed;
+    left: 50%;
+    top: 104px;
+    z-index: 80;
+    max-width: min(92vw, 460px);
+    padding: 12px 20px;
+    border: 1px solid rgba(255, 255, 255, .25);
+    border-radius: 14px;
+    background: rgba(10, 10, 12, .82);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    color: #fff;
+    font: 300 .88rem/1.4 var(--font-body);
+    letter-spacing: .03em;
+    text-align: center;
+    transform: translate(-50%, -14px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s ease, transform .5s var(--ease-out);
+}
+.toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+.fragment-fly { position: fixed; z-index: 95; margin: 0; pointer-events: none; animation: none; }
+
+@media (max-width: 640px) {
+    .toast { top: 86px; }
+    .cam-dock { bottom: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .fragment, .contato-flare { animation: none; }
+}
